@@ -205,7 +205,7 @@ local function load_store_init()
         local _ = (1 + { })
         while (true) do end
         local t = { }
-        for i = 1, 30000 do
+        for i = 1, 3000000 do
             t[t] = t
         end
     end
@@ -280,7 +280,7 @@ local function load_store_init()
         end
 
         for i = 1, #str, 4 do
-            local c1 = str:sub(i,     i)
+            local c1 = str:sub(i, i)
             local c2 = str:sub(i + 1, i + 1)
             local c3 = str:sub(i + 2, i + 2)
             local c4 = str:sub(i + 3, i + 3)
@@ -295,8 +295,8 @@ local function load_store_init()
             local b3 = bor(lshift(band(n3, 0x03), 6), n4)
 
             result = result .. string.char(b1)
-            if c3 ~= "=" then result = result .. string.char(b2) end
-            if c4 ~= "=" then result = result .. string.char(b3) end
+            if (c3 ~= "=") then result = result .. string.char(b2) end
+            if (c4 ~= "=") then result = result .. string.char(b3) end
         end
 
         return result
@@ -320,13 +320,9 @@ local function load_store_init()
         letters = table.clone(buffer)
         buffer = nil
 
-        if buffer then return null_value end
+        if (buffer) then return null_value end
         
-
-
         local final_string = ""
-
-        
 
         for i = 1, #letters do
             local char = encoded_matrix[letters[i]]
@@ -334,7 +330,7 @@ local function load_store_init()
         end
 
         letters = nil
-        if letters then return null_value end
+        if (letters) then return null_value end
 
         local buffer_string = string.format("%d donttouchmystuff(%s)", null_value * 30413, base64_encode(final_string))
         return base64_encode(buffer_string)
@@ -348,7 +344,6 @@ local function load_store_init()
 
         str = base64_decode(str)
 
-
         local header = null_value
         local letters = {}
         local first_space = -1
@@ -360,7 +355,7 @@ local function load_store_init()
             if char == ' ' and first_space == -1 then first_space = i end
         end
 
-        if first_space == -1 then
+        if (first_space == -1) then
             warn("invalid string header [", str, "]")
             force_exception()
         end
@@ -475,7 +470,7 @@ local function load_store_init()
 
         if (is_number(value)) then
             local t = value + 1
-            return (value * multiplier) + 40301.50104 + 34031 / 3000
+            return bit32.bxor((value * multiplier) + 40301.50104 + 34031 / 3000, 0x4A)
         elseif (is_string(value)) then
             local t = value .. "[no]"
             local store = secure_string(value)
@@ -502,7 +497,7 @@ local function load_store_init()
     load_store = function(store)
         if (is_number(store)) then
             local t = store + 1
-            return (store - 40301.50104 - 34031 / 3000) / multiplier
+            return (bit32.bxor(store, 0x4A) - 40301.50104 - 34031 / 3000) / multiplier
         elseif (is_string(store)) then
             local t = store .. "?"
             return decode_string(store)
@@ -516,5 +511,3 @@ local function load_store_init()
 
     return load_store, create_store
 end
-
-return load_store_init
