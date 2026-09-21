@@ -1,4 +1,15 @@
 -- does it work?
+-- output:
+--[[
+[main_constants] -- 
+	[1]: super_secret_key
+	[2]: 123456789
+
+
+[main_stack] --
+	[1]: MTk5MjQ4NDU4MTEyMCBkb250dG91Y2hteXN0dWZmKFdGTjJjVTkrV0hGQ1QzRnVmbjF4VUE9PSk=
+	[2]: 2147219912929474600
+]]
 local load_store, create_store = require("@root/store.lua")
 
 for i = 1, 100 do print('\n') end
