@@ -2,8 +2,8 @@
 -- this would be object orientated but luraph sucks and doesn't rename constant keys on a table :(
 
 local function load_store_init()
-    local multiplier = 0x404DCDEAD
     local null_value = 0x40A * math.random(40000, 80000)
+    local multiplier = 0x404DCDEAD + (null_value * 2)
 
     local matrix = {
         ["A"] = 0x4500,
@@ -214,12 +214,92 @@ local function load_store_init()
         return false
     end
 
-    local function base64_encode(str)
-        return str
+    -- // https://www.sunshine2k.de/articles/coding/base64/understanding_base64.html
+    local function is_valid_b64(str)
+        if (not str or #str == 0 or #str % 4 ~= 0) then
+            return false
+        end
+        if (str:match("[^ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=]")) then
+            return false
+        end
+
+        local base = str:match("^[^=]+=?=?$")
+        if (not base) then
+            return false
+        end
+
+        local padding = str:match("(=*)$")
+        if (#padding > 2) then
+            return false
+        end
+
+        return true
     end
 
+    local function base64_encode(str)
+        local lookup_table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        local rshift, bor, band, lshift = bit32.rshift, bit32.bor, bit32.band, bit32.lshift
+        local result = ""
+
+        for i = 1, #str, 3 do
+            local b1 = string.byte(str, i) or 0
+            local b2 = string.byte(str, i + 1) or 0
+            local b3 = string.byte(str, i + 2) or 0
+
+            local idx1 = rshift(b1, 2)
+            local idx2 = bor(lshift(band(b1, 0x03), 4), rshift(band(b2, 0xF0), 4))
+            local idx3 = bor(lshift(band(b2, 0x0F), 2), rshift(band(b3, 0xC0), 6))
+            local idx4 = band(b3, 0x3F)
+
+            local chars_in_chunk = #str - i + 1
+
+            result..= string.sub(lookup_table, idx1 + 1, idx1 + 1)
+            result..= string.sub(lookup_table, idx2 + 1, idx2 + 1)
+            result ..= chars_in_chunk >= 2 and string.sub(lookup_table, idx3 + 1, idx3 + 1) or "="
+            result ..= chars_in_chunk >= 3 and string.sub(lookup_table, idx4 + 1, idx4 + 1) or "="
+        end
+
+        return result
+    end
+
+
+    
     local function base64_decode(str)
-        return str
+        if not is_valid_b64(str) then
+            warn("invalid b64 string")
+            force_exception()
+        end
+
+        local lookup_table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        local rshift, bor, band, lshift = bit32.rshift, bit32.bor, bit32.band, bit32.lshift
+        local result = ""
+
+        local decode_map = {}
+        for i = 1, #lookup_table do
+            decode_map[string.sub(lookup_table, i, i)] = i - 1
+        end
+
+        for i = 1, #str, 4 do
+            local c1 = str:sub(i,     i)
+            local c2 = str:sub(i + 1, i + 1)
+            local c3 = str:sub(i + 2, i + 2)
+            local c4 = str:sub(i + 3, i + 3)
+
+            local n1 = decode_map[c1] or 0
+            local n2 = decode_map[c2] or 0
+            local n3 = decode_map[c3] or 0
+            local n4 = decode_map[c4] or 0
+
+            local b1 = bor(lshift(n1, 2), rshift(n2, 4))
+            local b2 = bor(lshift(band(n2, 0x0F), 4), rshift(n3, 2))
+            local b3 = bor(lshift(band(n3, 0x03), 6), n4)
+
+            result = result .. string.char(b1)
+            if c3 ~= "=" then result = result .. string.char(b2) end
+            if c4 ~= "=" then result = result .. string.char(b3) end
+        end
+
+        return result
     end
 
     local function secure_string(str)
@@ -257,17 +337,26 @@ local function load_store_init()
         if letters then return null_value end
 
         local buffer_string = string.format("%d donttouchmystuff(%s)", null_value * 30413, base64_encode(final_string))
-        return buffer_string
+        return base64_encode(buffer_string)
     end
 
     local function decode_string(str)
+        if (not is_valid_b64(str)) then
+            warn("invalid string format (b64)")
+            force_exception()
+        end
+
+        str = base64_decode(str)
+
+
         local header = null_value
         local letters = {}
         local first_space = -1
 
         for i = 1, #str do
-            local encoded_char = str:sub(i, i)
-            letters[i] = encoded_char
+            local char = str:sub(i, i)
+            letters[i] = char
+            
             if char == ' ' and first_space == -1 then first_space = i end
         end
 
@@ -345,6 +434,25 @@ local function load_store_init()
         return final_string
     end
 
+    local create_store = function() end
+    local load_store = function() end
+
+    local function encode_table(table)
+        local t = { }
+        for index, value in (table) do
+            t[create_store(index)] = create_store(value)
+        end
+        return t
+    end
+
+    local function decode_table(table)
+        local t = { }
+        for index, value in (table) do
+            t[load_store(index)] = load_store(value)
+        end
+        return t
+    end
+
     local function is_number(number)
         return (tonumber(number) ~= nil and type(number) == "number")
     end
@@ -354,7 +462,15 @@ local function load_store_init()
     end
 
 
-    local function create_store(value)
+    local function is_table(table)
+        return (typeof(table) == "table")
+    end
+
+    local function is_function(func)
+        return (typeof(func) == "function")
+    end
+
+    create_store = function(value)
         if (is_hooked(newcclosure)) then return nil end
 
         if (is_number(value)) then
@@ -365,22 +481,40 @@ local function load_store_init()
             local store = secure_string(value)
             if store == null_value then return nil end
             return store
+        elseif (is_table(value)) then
+            local t = #value and rawlen(value)
+            local store = encode_table(value)
+
+            if (store == null_value) then return nil end
+
+            return store
+        elseif (is_function(value)) then
+            local wrapper = function(...)
+                return value(...)
+            end
+            return islclosure(value) and newlclosure(value) or newcclosure(value)
         end
+
+
+        return value
     end
 
-    local function load_store(store)
+    load_store = function(store)
         if (is_number(store)) then
             local t = store + 1
             return (store - 40301.50104 - 34031 / 3000) / multiplier
         elseif (is_string(store)) then
             local t = store .. "?"
             return decode_string(store)
+        elseif (is_table(store)) then
+            local t = #store and rawlen(store)
+            return decode_table(store)
         end
+
+        return value
     end
 
     return load_store, create_store
 end
 
-
-
-local load, create = load_store_init()
+return load_store_init
